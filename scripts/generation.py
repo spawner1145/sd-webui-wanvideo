@@ -12,8 +12,8 @@ from pathlib import Path
 import gc
 
 # 定义模型路径和输出路径
-models_dir = Path("webui/models/wan")
-outputs_dir = Path("webui/outputs/videos")
+models_dir = Path("models/wan")
+outputs_dir = Path("outputs/videos")
 models_dir.mkdir(parents=True, exist_ok=True)
 outputs_dir.mkdir(parents=True, exist_ok=True)
 
