@@ -11,25 +11,21 @@ from modelscope.hub.snapshot_download import snapshot_download as modelscope_sna
 from pathlib import Path
 import gc
 
-# 定义模型路径和输出路径
 models_dir = Path("models/wan")
 outputs_dir = Path("outputs/videos")
 models_dir.mkdir(parents=True, exist_ok=True)
 outputs_dir.mkdir(parents=True, exist_ok=True)
 
-# 可用的文生视频模型
 text_to_video_models = [
     "Wan-AI/Wan2.1-T2V-14B-Diffusers",
     "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
 ]
 
-# 可用的图生视频模型
 image_to_video_models = [
     "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
     "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers"
 ]
 
-# 全局变量存储模型实例
 text_pipeline = None
 image_pipeline = None
 text_vae = None
@@ -81,7 +77,6 @@ def text_to_video(prompt, negative_prompt, model_id, source, height, width, num_
     global text_pipeline, text_vae
     
     try:
-        # 生成前清理内存
         torch.cuda.empty_cache()
         gc.collect()
         
@@ -112,7 +107,6 @@ def text_to_video(prompt, negative_prompt, model_id, source, height, width, num_
         output_path = outputs_dir / f"text_to_video_{int(torch.cuda.current_device())}.mp4"
         export_to_video(output, str(output_path), fps=fps)
         
-        # 生成后清理内存
         torch.cuda.empty_cache()
         gc.collect()
         
@@ -124,7 +118,6 @@ def image_to_video(image, prompt, negative_prompt, model_id, source, num_frames,
     global image_pipeline, image_vae, image_encoder
     
     try:
-        # 生成前清理内存
         torch.cuda.empty_cache()
         gc.collect()
         
@@ -166,7 +159,6 @@ def image_to_video(image, prompt, negative_prompt, model_id, source, num_frames,
         output_path = outputs_dir / f"image_to_video_{int(torch.cuda.current_device())}.mp4"
         export_to_video(output, str(output_path), fps=fps)
         
-        # 生成后清理内存
         torch.cuda.empty_cache()
         gc.collect()
         
@@ -178,7 +170,6 @@ def on_ui_tabs():
     with gr.Blocks() as demo:
         gr.Markdown("## 文生视频和图生视频工具")
         
-        # 添加清理内存按钮
         with gr.Row():
             clear_button = gr.Button("清理内存")
             clear_output = gr.Textbox(label="清理状态")
