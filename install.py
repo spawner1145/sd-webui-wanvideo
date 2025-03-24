@@ -4,5 +4,5 @@ import subprocess
 subprocess.run(["pip", "install", "git+https://github.com/huggingface/diffusers.git"])
 
 # 安装其他依赖
-subprocess.run(["pip", "install", "torch", "gradio", "transformers", "modelscope", "huggingface_hub", "numpy"])
+subprocess.run(["pip", "install", "transformers", "modelscope", "huggingface_hub", "numpy"])
     
