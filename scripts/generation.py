@@ -325,7 +325,7 @@ def create_wan_video_tab():
                         with gr.Accordion("TeaCache 参数", open=False):
                             tea_cache_l1_thresh = gr.Number(label="TeaCache L1阈值 (越大越快但质量下降)", value=0.07)
                             with gr.Accordion("TeaCache 建议值", open=False):
-                                tea_cache_suggestion = gr.Textbox(label="建议值", value="根据模型选择自动更新", interactive=False)
+                                tea_cache_suggestion = gr.Textbox(label="建议值", value="建议值: Low=0.05, Medium=0.07, High=0.08", interactive=False)
 
                         generate_btn = gr.Button("生成视频")
 
@@ -398,7 +398,7 @@ def create_wan_video_tab():
                         with gr.Accordion("TeaCache 参数", open=False):
                             tea_cache_l1_thresh_i2v = gr.Number(label="TeaCache L1阈值 (越大越快但质量下降)", value=0.19)
                             with gr.Accordion("TeaCache 建议值", open=False):
-                                tea_cache_suggestion_i2v = gr.Textbox(label="建议值", value="根据模型选择自动更新", interactive=False)
+                                tea_cache_suggestion_i2v = gr.Textbox(label="建议值", value="建议值: Low=0.13, Medium=0.19, High=0.26", interactive=False)
 
                         generate_i2v_btn = gr.Button("生成视频")
 
