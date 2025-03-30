@@ -1,8 +1,13 @@
-import subprocess
+# install.py
+import launch
 
-# 下载 diffusers 的 github 源码版
-subprocess.run(["pip", "install", "git+https://github.com/huggingface/diffusers.git"])
-
-# 安装其他依赖
-subprocess.run(["pip", "install", "transformers", "modelscope", "huggingface_hub", "numpy"])
+def install():
+    if not launch.is_installed("modelscope"):
+        launch.run_pip("install modelscope", "requirements for Wan Video Generator")
     
+    if not launch.is_installed("diffsynth"):
+        launch.run_pip("install git+https://gitclone.com/github.com/modelscope/DiffSynth-Studio", 
+                      "requirements for Wan Video Generator - DiffSynth-Studio")
+
+if __name__ == "__main__":
+    install()
