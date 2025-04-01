@@ -41,7 +41,7 @@ def get_hardware_info():
 # 加载模型
 def load_models(model_name, download_source):
     global pipe
-    model_dir = os.path.join("extensions", "wan-video-generator", "models", model_name) if IN_WEBUI else os.path.join(os.path.dirname(__file__), "..", "models", model_name)
+    model_dir = os.path.join("extensions", "sd-webui-wanvideo", "models", model_name) if IN_WEBUI else os.path.join(os.path.dirname(__file__), "..", "models", model_name)
     os.makedirs(model_dir, exist_ok=True)
 
     model_files = [
@@ -109,7 +109,7 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
                  model_name, fps, denoising_strength=1.0, rand_device="cpu", tiled=True, 
                  tile_size=(30, 52), tile_stride=(15, 26), progress_bar_cmd=tqdm, progress_bar_st=None):
     global pipe
-    model_dir = os.path.join("extensions", "wan-video-generator", "models", model_name) if IN_WEBUI else os.path.join(os.path.dirname(__file__), "..", "models", model_name)
+    model_dir = os.path.join("extensions", "sd-webui-wanvideo", "models", model_name) if IN_WEBUI else os.path.join(os.path.dirname(__file__), "..", "models", model_name)
     
     all_files_exist = all(os.path.exists(os.path.join(model_dir, file)) for file in [
         "diffusion_pytorch_model.safetensors",
@@ -197,7 +197,7 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
                 model_name, fps, denoising_strength=1.0, rand_device="cpu", tiled=True, 
                 tile_size=(30, 52), tile_stride=(15, 26), progress_bar_cmd=tqdm, progress_bar_st=None):
     global pipe
-    model_dir = os.path.join("extensions", "wan-video-generator", "models", model_name) if IN_WEBUI else os.path.join(os.path.dirname(__file__), "..", "models", model_name)
+    model_dir = os.path.join("extensions", "sd-webui-wanvideo", "models", model_name) if IN_WEBUI else os.path.join(os.path.dirname(__file__), "..", "models", model_name)
     
     all_files_exist = all(os.path.exists(os.path.join(model_dir, file)) for file in [
         "diffusion_pytorch_model.safetensors",
