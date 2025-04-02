@@ -1,4 +1,4 @@
-# F:\sd-reforge\webui\extensions\sd-webui-wanvideo\scripts\generation.py
+# scripts/wan_video.py
 import gradio as gr
 import torch
 import time
@@ -11,11 +11,6 @@ from huggingface_hub import snapshot_download as hf_snapshot_download
 from PIL import Image
 from tqdm import tqdm
 import random
-import shutil
-import logging
-
-# 设置日志
-logging.basicConfig(level=logging.INFO)
 
 # 检查是否在 WebUI 环境中运行
 try:
@@ -46,18 +41,7 @@ def get_hardware_info():
 # 加载模型
 def load_models(model_name, download_source):
     global pipe
-    
-    # 根据是否在 WebUI 环境中选择不同的路径
-    if IN_WEBUI:
-        model_dir = f"models/wan2.1/{model_name}"
-    else:
-        model_dir = f"models/wan2.1/{model_name}"
-    
-    # 记录当前工作目录和目标路径以便调试
-    logging.info(f"当前工作目录: {os.getcwd()}")
-    logging.info(f"模型目录: {os.path.abspath(model_dir)}")
-    
-    # 创建目录
+    model_dir = os.path.join("extensions", "sd-webui-wanvideo", "models", model_name) if IN_WEBUI else os.path.join(os.path.dirname(__file__), "..", "models", model_name)
     os.makedirs(model_dir, exist_ok=True)
 
     model_files = [
@@ -66,25 +50,29 @@ def load_models(model_name, download_source):
         "Wan2.1_VAE.pth"
     ]
     
-    # 下载模型
-    try:
-        if download_source == "ModelScope":
-            ms_snapshot_download(f"Wan-AI/{model_name}", local_dir=model_dir)
-        elif download_source == "Hugging Face":
-            hf_snapshot_download(repo_id=f"Wan-AI/{model_name}", local_dir=model_dir)
-    except Exception as e:
-        raise Exception(f"模型下载失败: {str(e)}")
+    if not all(os.path.exists(os.path.join(model_dir, file)) for file in model_files):
+        try:
+            if download_source == "ModelScope":
+                ms_snapshot_download(f"Wan-AI/{model_name}", local_dir=model_dir)
+            elif download_source == "Hugging Face":
+                hf_snapshot_download(repo_id=f"Wan-AI/{model_name}", local_dir=model_dir)
+        except Exception as e:
+            raise Exception(f"模型下载失败: {str(e)}")
+
+    if not all(os.path.exists(os.path.join(model_dir, file)) for file in model_files):
+        raise Exception("模型文件下载不完整")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    torch_dtype = torch.bfloat16
-    model_manager = ModelManager(device=device, torch_dtype=torch_dtype)
+    model_manager = ModelManager(device=device)
     
-    # 加载模型文件
-    model_list = [os.path.join(model_dir, f) for f in model_files]
-    model_manager.load_models(model_list)
-    
-    # 从 ModelManager 创建管道
-    pipe = WanVideoPipeline.from_model_manager(model_manager, torch_dtype=torch_dtype, device=device)
+    model_list = [
+        os.path.join(model_dir, "diffusion_pytorch_model.safetensors"),
+        os.path.join(model_dir, "models_t5_umt5-xxl-enc-bf16.pth"),
+        os.path.join(model_dir, "Wan2.1_VAE.pth"),
+    ]
+
+    model_manager.load_models(model_list, torch_dtype=torch.bfloat16)
+    pipe = WanVideoPipeline.from_model_manager(model_manager, torch_dtype=torch.bfloat16, device=device)
     
     if device == "cuda":
         pipe.enable_vram_management(num_persistent_param_in_dit=None)
@@ -121,10 +109,7 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
                  model_name, fps, denoising_strength=1.0, rand_device="cpu", tiled=True, 
                  tile_size=(30, 52), tile_stride=(15, 26), progress_bar_cmd=tqdm, progress_bar_st=None):
     global pipe
-    if IN_WEBUI:
-        model_dir = f"models/wan2.1/{model_name}"
-    else:
-        model_dir = os.path.join(os.path.dirname(__file__), "..", "models", model_name)
+    model_dir = os.path.join("extensions", "sd-webui-wanvideo", "models", model_name) if IN_WEBUI else os.path.join(os.path.dirname(__file__), "..", "models", model_name)
     
     all_files_exist = all(os.path.exists(os.path.join(model_dir, file)) for file in [
         "diffusion_pytorch_model.safetensors",
@@ -145,29 +130,30 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
         if actual_seed == -1:
             actual_seed = random.randint(0, 2**32 - 1)
 
-        # 调用 WanVideoPipeline
-        frames = pipe(
-            prompt=prompt or "默认提示词",
-            negative_prompt=negative_prompt or "",
-            input_image=None,
-            input_video=None,
-            denoising_strength=float(denoising_strength),
-            seed=actual_seed,
-            rand_device=rand_device,
-            height=int(height),
-            width=int(width),
-            num_frames=int(num_frames),
-            cfg_scale=float(cfg_scale),
-            num_inference_steps=int(num_inference_steps),
-            sigma_shift=float(sigma_shift),
-            tiled=bool(tiled),
-            tile_size=tile_size,
-            tile_stride=tile_stride,
-            tea_cache_l1_thresh=float(tea_cache_l1_thresh) if tea_cache_l1_thresh is not None else None,
-            tea_cache_model_id=model_name,
-            progress_bar_cmd=progress_bar_cmd,
-            progress_bar_st=progress_bar_st
-        )
+        params = {
+            "prompt": prompt or "默认提示词",
+            "negative_prompt": negative_prompt or "",
+            "input_image": None,
+            "input_video": None,
+            "denoising_strength": float(denoising_strength),
+            "seed": actual_seed,  # 使用实际种子
+            "rand_device": rand_device,
+            "height": int(height),
+            "width": int(width),
+            "num_frames": int(num_frames),
+            "cfg_scale": float(cfg_scale),
+            "num_inference_steps": int(num_inference_steps),
+            "sigma_shift": float(sigma_shift),
+            "tiled": bool(tiled),
+            "tile_size": tile_size,
+            "tile_stride": tile_stride,
+            "tea_cache_l1_thresh": float(tea_cache_l1_thresh) if tea_cache_l1_thresh is not None else None,
+            "tea_cache_model_id": model_name,
+            "progress_bar_cmd": progress_bar_cmd,
+            "progress_bar_st": progress_bar_st
+        }
+        
+        video = pipe(**params)
 
         output_dir = "outputs"
         os.makedirs(output_dir, exist_ok=True)
@@ -177,7 +163,7 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
         if disk_space < 1:
             raise Exception("磁盘空间不足，请清理后再试")
         
-        save_video(frames, output_path, fps=int(fps), quality=5)
+        save_video(video, output_path, fps=int(fps), quality=5)
 
         mem_info = ""
         if torch.cuda.is_available():
@@ -188,18 +174,18 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
         time_cost = time.time() - start_time
         info = f"""{pipe.hardware_info}
 生成信息：
-- 分辨率：{width}x{height}
-- 总帧数：{num_frames}
-- 推理步数：{num_inference_steps}
+- 分辨率：{params['width']}x{params['height']}
+- 总帧数：{params['num_frames']}
+- 推理步数：{params['num_inference_steps']}
 - 随机种子：{actual_seed} {'(随机生成)' if seed == -1 else ''}
 - 总耗时：{time_cost:.2f}秒
 - 帧率：{fps} FPS
-- 视频时长：{num_frames / int(fps):.1f}秒
+- 视频时长：{params['num_frames'] / int(fps):.1f}秒
 {mem_info}
 - 模型版本：{model_name}
 - 下载源：{download_source}
-- 使用Tiled：{'是' if tiled else '否'}
-- TeaCache L1阈值：{tea_cache_l1_thresh if tea_cache_l1_thresh is not None else '未使用'}
+- 使用Tiled：{'是' if params['tiled'] else '否'}
+- TeaCache L1阈值：{params['tea_cache_l1_thresh'] if params['tea_cache_l1_thresh'] is not None else '未使用'}
 """
         return output_path, info
     except Exception as e:
@@ -211,10 +197,7 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
                 model_name, fps, denoising_strength=1.0, rand_device="cpu", tiled=True, 
                 tile_size=(30, 52), tile_stride=(15, 26), progress_bar_cmd=tqdm, progress_bar_st=None):
     global pipe
-    if IN_WEBUI:
-        model_dir = f"models/wan2.1/{model_name}"
-    else:
-        model_dir = os.path.join(os.path.dirname(__file__), "..", "models", model_name)
+    model_dir = os.path.join("extensions", "sd-webui-wanvideo", "models", model_name) if IN_WEBUI else os.path.join(os.path.dirname(__file__), "..", "models", model_name)
     
     all_files_exist = all(os.path.exists(os.path.join(model_dir, file)) for file in [
         "diffusion_pytorch_model.safetensors",
@@ -239,29 +222,30 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
         if actual_seed == -1:
             actual_seed = random.randint(0, 2**32 - 1)
 
-        # 调用 WanVideoPipeline
-        frames = pipe(
-            prompt=prompt or "默认提示词",
-            negative_prompt=negative_prompt or "",
-            input_image=img,
-            input_video=None,
-            denoising_strength=float(denoising_strength),
-            seed=actual_seed,
-            rand_device=rand_device,
-            height=int(height),
-            width=int(width),
-            num_frames=int(num_frames),
-            cfg_scale=float(cfg_scale),
-            num_inference_steps=int(num_inference_steps),
-            sigma_shift=float(sigma_shift),
-            tiled=bool(tiled),
-            tile_size=tile_size,
-            tile_stride=tile_stride,
-            tea_cache_l1_thresh=float(tea_cache_l1_thresh) if tea_cache_l1_thresh is not None else None,
-            tea_cache_model_id=model_name,
-            progress_bar_cmd=progress_bar_cmd,
-            progress_bar_st=progress_bar_st
-        )
+        params = {
+            "prompt": prompt or "默认提示词",
+            "negative_prompt": negative_prompt or "",
+            "input_image": img,
+            "input_video": None,
+            "denoising_strength": float(denoising_strength),
+            "seed": actual_seed,  # 使用实际种子
+            "rand_device": rand_device,
+            "height": int(height),
+            "width": int(width),
+            "num_frames": int(num_frames),
+            "cfg_scale": float(cfg_scale),
+            "num_inference_steps": int(num_inference_steps),
+            "sigma_shift": float(sigma_shift),
+            "tiled": bool(tiled),
+            "tile_size": tile_size,
+            "tile_stride": tile_stride,
+            "tea_cache_l1_thresh": float(tea_cache_l1_thresh) if tea_cache_l1_thresh is not None else None,
+            "tea_cache_model_id": model_name,
+            "progress_bar_cmd": progress_bar_cmd,
+            "progress_bar_st": progress_bar_st
+        }
+        
+        video = pipe(**params)
 
         output_dir = "outputs"
         os.makedirs(output_dir, exist_ok=True)
@@ -271,7 +255,7 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
         if disk_space < 1:
             raise Exception("磁盘空间不足，请清理后再试")
         
-        save_video(frames, output_path, fps=int(fps), quality=5)
+        save_video(video, output_path, fps=int(fps), quality=5)
 
         mem_info = ""
         if torch.cuda.is_available():
@@ -282,18 +266,18 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
         time_cost = time.time() - start_time
         info = f"""{pipe.hardware_info}
 生成信息：
-- 分辨率：{width}x{height}
-- 总帧数：{num_frames}
-- 推理步数：{num_inference_steps}
+- 分辨率：{params['width']}x{params['height']}
+- 总帧数：{params['num_frames']}
+- 推理步数：{params['num_inference_steps']}
 - 随机种子：{actual_seed} {'(随机生成)' if seed == -1 else ''}
 - 总耗时：{time_cost:.2f}秒
 - 帧率：{fps} FPS
-- 视频时长：{num_frames / int(fps):.1f}秒
+- 视频时长：{params['num_frames'] / int(fps):.1f}秒
 {mem_info}
 - 模型版本：{model_name}
 - 下载源：{download_source}
-- 使用Tiled：{'是' if tiled else '否'}
-- TeaCache L1阈值：{tea_cache_l1_thresh if tea_cache_l1_thresh is not None else '未使用'}
+- 使用Tiled：{'是' if params['tiled'] else '否'}
+- TeaCache L1阈值：{params['tea_cache_l1_thresh'] if params['tea_cache_l1_thresh'] is not None else '未使用'}
 """
         return output_path, info
     except Exception as e:
