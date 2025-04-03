@@ -59,7 +59,8 @@ def extract_lora_from_prompt(prompt):
     return loras, cleaned_prompt
 
 # 加载模型和 LoRA
-def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_prompt="", torch_dtype="bfloat16", use_usp=False):
+def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_prompt="", 
+                torch_dtype="bfloat16", image_encoder_torch_dtype="float32", use_usp=False):
     global pipe, loaded_loras
     
     # 定义模型目录
@@ -86,57 +87,83 @@ def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_
     if image_encoder_dir:
         logging.info(f"Image Encoder 模型目录: {os.path.abspath(image_encoder_dir)}")
     
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    torch_dtype = torch.bfloat16 if torch_dtype == "bfloat16" else torch.float8_e4m3fn
-    model_manager = ModelManager(device="cpu", torch_dtype=torch_dtype)
-    
     # 检查模型文件是否存在
     if not dit_models or "无模型文件" in dit_models or t5_model == "无模型文件" or vae_model == "无模型文件":
-        raise Exception("请确保所有模型文件夹中都有有效的模型文件")
-    if image_encoder_model == "无模型文件" or image_encoder_model == "无":
+        raise Exception("请确保所有模型文件夹中都有有效的模型文件：DIT、T5 和 VAE 模型不可为空")
+    if image_encoder_model in ["无模型文件", "无"]:
         image_encoder_model = None
     
-    # 加载基础模型
-    dit_model_paths = [os.path.join(dit_dir, dit_model) for dit_model in dit_models]
+    # 将多个 DIT 模型文件视为一个整体
+    dit_model_paths = [os.path.join(dit_dir, dit_model) for dit_model in dit_models if dit_model != "无模型文件"]
+    if not dit_model_paths:
+        raise Exception("未选择有效的 DIT 模型文件")
+    
+    # 组织 model_list，DIT 模型作为一个嵌套列表
     model_list = [
-        dit_model_paths,  # 支持多个 DIT 模型路径
+        dit_model_paths,  # 多个 DIT 文件合并加载
         os.path.join(t5_dir, t5_model),
         os.path.join(vae_dir, vae_model)
     ]
-    if image_encoder_model and image_encoder_dir:
-        model_manager.load_models([os.path.join(image_encoder_dir, image_encoder_model)], torch_dtype=torch.float32)
-        model_list.insert(0, os.path.join(image_encoder_dir, image_encoder_model))
     
-    model_manager.load_models(model_list)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch_dtype = torch.bfloat16 if torch_dtype == "bfloat16" else torch.float8_e4m3fn
+    image_encoder_torch_dtype = torch.float32 if image_encoder_torch_dtype == "float32" else torch.bfloat16
+    model_manager = ModelManager(device="cpu", torch_dtype=torch_dtype)
     
-    # 从提示词中提取 LoRA 信息
+    # 检查文件路径
+    for item in model_list:
+        if isinstance(item, list):
+            for path in item:
+                if not os.path.exists(path):
+                    raise FileNotFoundError(f"DIT 模型文件 {path} 不存在，请检查路径")
+        elif not os.path.exists(item):
+            raise FileNotFoundError(f"模型文件 {item} 不存在，请检查路径")
+    
+    # 加载 Image Encoder（若存在）
+    if image_encoder_model:
+        image_encoder_path = os.path.join(image_encoder_dir, image_encoder_model)
+        if not os.path.exists(image_encoder_path):
+            raise FileNotFoundError(f"Image Encoder 文件 {image_encoder_path} 不存在，请检查路径")
+        logging.info(f"加载 Image Encoder: {image_encoder_path} (使用 {image_encoder_torch_dtype})")
+        model_manager.load_models([image_encoder_path], torch_dtype=image_encoder_torch_dtype)
+        model_list.insert(0, image_encoder_path)
+    
+    # 加载基础模型
+    logging.info(f"开始加载基础模型: {model_list} (使用 {torch_dtype})")
+    model_manager.load_models(model_list, torch_dtype=torch_dtype)
+    logging.info(f"基础模型加载完成: {model_manager.model_name if model_manager.model_name else '未识别到模型'}")
+    
+    # 从提示词中提取 LoRA 信息并加载
     loras, _ = extract_lora_from_prompt(lora_prompt)
-    current_loras = {name: weight for name, weight in loras}
-    
-    # 加载 LoRA
     if loras:
         for lora_name, lora_weight in loras:
             lora_path = os.path.join(lora_dir, lora_name)
             if not os.path.exists(lora_path):
                 logging.warning(f"LoRA 文件 {lora_path} 不存在，跳过加载")
                 continue
-            model_manager.load_lora(lora_path, lora_alpha=lora_weight)
-            loaded_loras[lora_name] = lora_weight
-    elif loaded_loras:
-        # 如果提示词中没有 LoRA，且之前加载过 LoRA，则重置模型以移除 LoRA 影响
-        model_manager = ModelManager(device="cpu", torch_dtype=torch_dtype)
-        model_manager.load_models(model_list)
+            if lora_name not in loaded_loras or loaded_loras[lora_name] != lora_weight:
+                logging.info(f"加载 LoRA: {lora_path} (alpha={lora_weight})")
+                model_manager.load_lora(lora_path, lora_alpha=lora_weight)
+                loaded_loras[lora_name] = lora_weight
+    elif loaded_loras and not loras:
+        logging.info("提示词中未指定 LoRA，清除之前加载的 LoRA 记录")
         loaded_loras.clear()
     
-    # 从 ModelManager 创建管道
-    pipe = WanVideoPipeline.from_model_manager(model_manager, torch_dtype=torch_dtype, device=device, use_usp=use_usp)
+    # 检查 USP 环境
+    if use_usp and not torch.distributed.is_initialized():
+        logging.warning("USP 启用失败：分布式环境未初始化，将禁用 USP")
+        use_usp = False
     
+    # 创建管道
+    pipe = WanVideoPipeline.from_model_manager(model_manager, torch_dtype=torch_dtype, device=device, use_usp=use_usp)
     if device == "cuda":
         pipe.enable_vram_management(num_persistent_param_in_dit=None)
     
+    # 设置管道信息
     pipe.hardware_info = get_hardware_info()
     pipe.model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
     pipe.lora_info = ", ".join([f"{name} ({weight})" for name, weight in loaded_loras.items()]) if loaded_loras else "无"
+    pipe.torch_dtype_info = f"DIT/T5/VAE: {torch_dtype}, Image Encoder: {image_encoder_torch_dtype if image_encoder_model else '未使用'}"
     return pipe
 
 # 自适应图片分辨率
@@ -155,14 +182,14 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
                  num_frames, cfg_scale, sigma_shift, tea_cache_l1_thresh, tea_cache_model_id, 
                  dit_models, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
                  rand_device, tiled, tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, 
-                 torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
+                 torch_dtype, image_encoder_torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
     global pipe
     
     # 从提示词中提取 LoRA 并加载模型
     loras, cleaned_prompt = extract_lora_from_prompt(prompt)
     current_model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
     if pipe is None or getattr(pipe, "model_name", None) != current_model_name or loras != list(loaded_loras.items()):
-        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, use_usp)
+        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -198,8 +225,10 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
             progress_bar_st=progress_bar_st
         )
 
-        output_dir = "outputs"
+        output_dir = shared.opts.outdir_samples or shared.opts.outdir_txt2img_samples or "outputs"
         os.makedirs(output_dir, exist_ok=True)
+        if not os.access(output_dir, os.W_OK):
+            raise PermissionError(f"输出目录 {output_dir} 不可写，请检查权限")
         output_path = os.path.join(output_dir, f"wan_video_t2v_{int(time.time())}.mp4")
         
         disk_space = psutil.disk_usage(output_dir).free // (1024 ** 3)
@@ -231,7 +260,7 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
 - Tile Stride：({tile_stride_x}, {tile_stride_y})
 - TeaCache L1阈值：{tea_cache_l1_thresh if tea_cache_l1_thresh is not None else '未使用'}
 - TeaCache Model ID：{tea_cache_model_id}
-- Torch 数据类型：{torch_dtype}
+- Torch 数据类型：{pipe.torch_dtype_info}
 - 使用USP：{'是' if use_usp else '否'}
 - 已加载LoRA：{pipe.lora_info}
 """
@@ -244,14 +273,14 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
                 num_frames, cfg_scale, sigma_shift, tea_cache_l1_thresh, tea_cache_model_id, 
                 dit_models, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
                 rand_device, tiled, tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, 
-                torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
+                torch_dtype, image_encoder_torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
     global pipe
     
     # 从提示词中提取 LoRA 并加载模型
     loras, cleaned_prompt = extract_lora_from_prompt(prompt)
     current_model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
     if pipe is None or getattr(pipe, "model_name", None) != current_model_name or loras != list(loaded_loras.items()):
-        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, use_usp)
+        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -291,8 +320,10 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
             progress_bar_st=progress_bar_st
         )
 
-        output_dir = "outputs"
+        output_dir = shared.opts.outdir_samples or shared.opts.outdir_txt2img_samples or "outputs"
         os.makedirs(output_dir, exist_ok=True)
+        if not os.access(output_dir, os.W_OK):
+            raise PermissionError(f"输出目录 {output_dir} 不可写，请检查权限")
         output_path = os.path.join(output_dir, f"wan_video_i2v_{int(time.time())}.mp4")
         
         disk_space = psutil.disk_usage(output_dir).free // (1024 ** 3)
@@ -324,7 +355,7 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
 - Tile Stride：({tile_stride_x}, {tile_stride_y})
 - TeaCache L1阈值：{tea_cache_l1_thresh if tea_cache_l1_thresh is not None else '未使用'}
 - TeaCache Model ID：{tea_cache_model_id}
-- Torch 数据类型：{torch_dtype}
+- Torch 数据类型：{pipe.torch_dtype_info}
 - 使用USP：{'是' if use_usp else '否'}
 - 已加载LoRA：{pipe.lora_info}
 """
@@ -337,14 +368,14 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
                 num_frames, cfg_scale, sigma_shift, dit_models, t5_model, vae_model, 
                 image_encoder_model, fps, denoising_strength, rand_device, tiled, 
                 tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, torch_dtype, 
-                use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
+                image_encoder_torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
     global pipe
     
     # 从提示词中提取 LoRA 并加载模型
     loras, cleaned_prompt = extract_lora_from_prompt(prompt)
     current_model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
     if pipe is None or getattr(pipe, "model_name", None) != current_model_name or loras != list(loaded_loras.items()):
-        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, use_usp)
+        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -384,8 +415,10 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
             progress_bar_st=progress_bar_st
         )
 
-        output_dir = "outputs"
+        output_dir = shared.opts.outdir_samples or shared.opts.outdir_txt2img_samples or "outputs"
         os.makedirs(output_dir, exist_ok=True)
+        if not os.access(output_dir, os.W_OK):
+            raise PermissionError(f"输出目录 {output_dir} 不可写，请检查权限")
         output_path = os.path.join(output_dir, f"wan_video_v2v_{int(time.time())}.mp4")
         
         disk_space = psutil.disk_usage(output_dir).free // (1024 ** 3)
@@ -415,7 +448,7 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
 - 使用Tiled：{'是' if tiled else '否'}
 - Tile Size：({tile_size_x}, {tile_size_y})
 - Tile Stride：({tile_stride_x}, {tile_stride_y})
-- Torch 数据类型：{torch_dtype}
+- Torch 数据类型：{pipe.torch_dtype_info}
 - 使用USP：{'是' if use_usp else '否'}
 - 已加载LoRA：{pipe.lora_info}
 """
@@ -446,9 +479,8 @@ def create_wan_video_tab():
         
         # 顶部模型选择
         with gr.Row():
-            # 修改为支持多选的 DIT 模型选择
             dit_model = gr.Dropdown(
-                label="选择 DIT 模型 (可多选)",
+                label="选择 DIT 模型 (可多选，多个文件将合并为一个模型)",
                 choices=dit_models,
                 value=[dit_models[0]],  # 默认选中第一个模型
                 multiselect=True
@@ -486,7 +518,8 @@ def create_wan_video_tab():
                             tile_size_y = gr.Number(label="Tile Size Y", value=52, precision=0)
                             tile_stride_x = gr.Number(label="Tile Stride X", value=15, precision=0)
                             tile_stride_y = gr.Number(label="Tile Stride Y", value=26, precision=0)
-                            torch_dtype = gr.Dropdown(label="Torch 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
+                            torch_dtype = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
+                            image_encoder_torch_dtype = gr.Dropdown(label="Image Encoder 数据类型", choices=["float32", "bfloat16"], value="float32")
                             use_usp = gr.Checkbox(label="使用USP (Unified Sequence Parallel)", value=False)
 
                         with gr.Accordion("TeaCache 参数", open=False):
@@ -513,7 +546,7 @@ def create_wan_video_tab():
                         sigma_shift,
                         tea_cache_l1_thresh,
                         tea_cache_model_id,
-                        dit_model,  # 改为多选输入
+                        dit_model,
                         t5_model,
                         vae_model,
                         image_encoder_model,
@@ -526,6 +559,7 @@ def create_wan_video_tab():
                         tile_stride_x,
                         tile_stride_y,
                         torch_dtype,
+                        image_encoder_torch_dtype,
                         use_usp
                     ],
                     outputs=[output_video, info_output]
@@ -561,7 +595,8 @@ def create_wan_video_tab():
                             tile_size_y_i2v = gr.Number(label="Tile Size Y", value=52, precision=0)
                             tile_stride_x_i2v = gr.Number(label="Tile Stride X", value=15, precision=0)
                             tile_stride_y_i2v = gr.Number(label="Tile Stride Y", value=26, precision=0)
-                            torch_dtype_i2v = gr.Dropdown(label="Torch 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
+                            torch_dtype_i2v = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
+                            image_encoder_torch_dtype_i2v = gr.Dropdown(label="Image Encoder 数据类型", choices=["float32", "bfloat16"], value="float32")
                             use_usp_i2v = gr.Checkbox(label="使用USP (Unified Sequence Parallel)", value=False)
 
                         with gr.Accordion("TeaCache 参数", open=False):
@@ -595,7 +630,7 @@ def create_wan_video_tab():
                         sigma_shift_i2v,
                         tea_cache_l1_thresh_i2v,
                         tea_cache_model_id_i2v,
-                        dit_model,  # 改为多选输入
+                        dit_model,
                         t5_model,
                         vae_model,
                         image_encoder_model,
@@ -608,6 +643,7 @@ def create_wan_video_tab():
                         tile_stride_x_i2v,
                         tile_stride_y_i2v,
                         torch_dtype_i2v,
+                        image_encoder_torch_dtype_i2v,
                         use_usp_i2v
                     ],
                     outputs=[output_video_i2v, info_output_i2v]
@@ -642,7 +678,8 @@ def create_wan_video_tab():
                             tile_size_y_v2v = gr.Number(label="Tile Size Y", value=52, precision=0)
                             tile_stride_x_v2v = gr.Number(label="Tile Stride X", value=15, precision=0)
                             tile_stride_y_v2v = gr.Number(label="Tile Stride Y", value=26, precision=0)
-                            torch_dtype_v2v = gr.Dropdown(label="Torch 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
+                            torch_dtype_v2v = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
+                            image_encoder_torch_dtype_v2v = gr.Dropdown(label="Image Encoder 数据类型", choices=["float32", "bfloat16"], value="float32")
                             use_usp_v2v = gr.Checkbox(label="使用USP (Unified Sequence Parallel)", value=False)
 
                         generate_v2v_btn = gr.Button("生成视频")
@@ -664,7 +701,7 @@ def create_wan_video_tab():
                         num_frames_v2v,
                         cfg_scale_v2v,
                         sigma_shift_v2v,
-                        dit_model,  # 改为多选输入
+                        dit_model,
                         t5_model,
                         vae_model,
                         image_encoder_model,
@@ -677,6 +714,7 @@ def create_wan_video_tab():
                         tile_stride_x_v2v,
                         tile_stride_y_v2v,
                         torch_dtype_v2v,
+                        image_encoder_torch_dtype_v2v,
                         use_usp_v2v
                     ],
                     outputs=[output_video_v2v, info_output_v2v]
