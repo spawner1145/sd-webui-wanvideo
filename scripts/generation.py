@@ -23,9 +23,6 @@ except ImportError:
     IN_WEBUI = False
     shared = type('Shared', (), {'opts': type('Opts', (), {'outdir_samples': '', 'outdir_txt2img_samples': ''})})()
 
-pipe = None  # 全局变量，用于存储模型管道
-loaded_loras = {}  # 存储已加载的 LoRA 信息
-
 # 获取硬件信息
 def get_hardware_info():
     info = ""
@@ -64,8 +61,6 @@ def extract_lora_from_prompt(prompt):
 # 加载模型和 LoRA
 def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_prompt="", 
                 torch_dtype="bfloat16", image_encoder_torch_dtype="float32", use_usp=False):
-    global pipe, loaded_loras
-    
     # 定义模型目录
     base_dir = "models/wan2.1"
     dit_dir = os.path.join(base_dir, "dit")
@@ -138,19 +133,16 @@ def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_
     
     # 从提示词中提取 LoRA 信息并加载
     loras, _ = extract_lora_from_prompt(lora_prompt)
+    loaded_loras = {}
     if loras:
         for lora_name, lora_weight in loras:
             lora_path = os.path.join(lora_dir, lora_name)
             if not os.path.exists(lora_path):
                 logging.warning(f"LoRA 文件 {lora_path} 不存在，跳过加载")
                 continue
-            if lora_name not in loaded_loras or loaded_loras[lora_name] != lora_weight:
-                logging.info(f"加载 LoRA: {lora_path} (alpha={lora_weight})")
-                model_manager.load_lora(lora_path, lora_alpha=lora_weight)
-                loaded_loras[lora_name] = lora_weight
-    elif loaded_loras and not loras:
-        logging.info("提示词中未指定 LoRA，清除之前加载的 LoRA 记录")
-        loaded_loras.clear()
+            logging.info(f"加载 LoRA: {lora_path} (alpha={lora_weight})")
+            model_manager.load_lora(lora_path, lora_alpha=lora_weight)
+            loaded_loras[lora_name] = lora_weight
     
     # 检查 USP 环境
     if use_usp and not torch.distributed.is_initialized():
@@ -186,13 +178,8 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
                  dit_models, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
                  rand_device, tiled, tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, 
                  torch_dtype, image_encoder_torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
-    global pipe
-    
-    # 从提示词中提取 LoRA 并加载模型
-    loras, cleaned_prompt = extract_lora_from_prompt(prompt)
-    current_model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
-    if pipe is None or getattr(pipe, "model_name", None) != current_model_name or loras != list(loaded_loras.items()):
-        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
+    # 每次生成都创建新的 pipe
+    pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -203,6 +190,9 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
         actual_seed = int(seed)
         if actual_seed == -1:
             actual_seed = random.randint(0, 2**32 - 1)
+
+        # 从提示词中提取 LoRA 并清理提示词
+        _, cleaned_prompt = extract_lora_from_prompt(prompt)
 
         # 调用 WanVideoPipeline
         frames = pipe(
@@ -270,6 +260,8 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
         return output_path, info
     except Exception as e:
         return None, f"生成失败: {str(e)}"
+    finally:
+        del pipe  # 确保每次生成后清理 pipe
 
 # 生成图生视频
 def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, height, width, 
@@ -277,13 +269,8 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
                 dit_models, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
                 rand_device, tiled, tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, 
                 torch_dtype, image_encoder_torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
-    global pipe
-    
-    # 从提示词中提取 LoRA 并加载模型
-    loras, cleaned_prompt = extract_lora_from_prompt(prompt)
-    current_model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
-    if pipe is None or getattr(pipe, "model_name", None) != current_model_name or loras != list(loaded_loras.items()):
-        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
+    # 每次生成都创建新的 pipe
+    pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -298,6 +285,9 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
         actual_seed = int(seed)
         if actual_seed == -1:
             actual_seed = random.randint(0, 2**32 - 1)
+
+        # 从提示词中提取 LoRA 并清理提示词
+        _, cleaned_prompt = extract_lora_from_prompt(prompt)
 
         # 调用 WanVideoPipeline
         frames = pipe(
@@ -365,6 +355,8 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
         return output_path, info
     except Exception as e:
         return None, f"生成失败: {str(e)}"
+    finally:
+        del pipe  # 确保每次生成后清理 pipe
 
 # 生成视频生视频
 def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, height, width, 
@@ -372,13 +364,8 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
                 image_encoder_model, fps, denoising_strength, rand_device, tiled, 
                 tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, torch_dtype, 
                 image_encoder_torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
-    global pipe
-    
-    # 从提示词中提取 LoRA 并加载模型
-    loras, cleaned_prompt = extract_lora_from_prompt(prompt)
-    current_model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
-    if pipe is None or getattr(pipe, "model_name", None) != current_model_name or loras != list(loaded_loras.items()):
-        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
+    # 每次生成都创建新的 pipe
+    pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -393,6 +380,9 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
         actual_seed = int(seed)
         if actual_seed == -1:
             actual_seed = random.randint(0, 2**32 - 1)
+
+        # 从提示词中提取 LoRA 并清理提示词
+        _, cleaned_prompt = extract_lora_from_prompt(prompt)
 
         # 调用 WanVideoPipeline
         frames = pipe(
@@ -458,6 +448,8 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
         return output_path, info
     except Exception as e:
         return None, f"生成失败: {str(e)}"
+    finally:
+        del pipe  # 确保每次生成后清理 pipe
 
 # 创建界面
 def create_wan_video_tab():
