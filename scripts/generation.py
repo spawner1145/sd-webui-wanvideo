@@ -47,7 +47,10 @@ def get_model_files(directory):
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
         return ["无模型文件"]
-    files = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+    files = [
+        f for f in os.listdir(directory)
+        if os.path.isfile(os.path.join(directory, f)) and not f.endswith('.txt')
+    ]
     return files if files else ["无模型文件"]
 
 # 从提示词中提取 LoRA 信息
