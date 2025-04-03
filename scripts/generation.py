@@ -59,7 +59,7 @@ def extract_lora_from_prompt(prompt):
     return loras, cleaned_prompt
 
 # 加载模型和 LoRA
-def load_models(dit_model, t5_model, vae_model, image_encoder_model=None, lora_prompt="", torch_dtype="bfloat16", use_usp=False):
+def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_prompt="", torch_dtype="bfloat16", use_usp=False):
     global pipe, loaded_loras
     
     # 定义模型目录
@@ -91,13 +91,18 @@ def load_models(dit_model, t5_model, vae_model, image_encoder_model=None, lora_p
     model_manager = ModelManager(device="cpu", torch_dtype=torch_dtype)
     
     # 检查模型文件是否存在
-    if dit_model == "无模型文件" or t5_model == "无模型文件" or vae_model == "无模型文件":
+    if not dit_models or "无模型文件" in dit_models or t5_model == "无模型文件" or vae_model == "无模型文件":
         raise Exception("请确保所有模型文件夹中都有有效的模型文件")
-    if image_encoder_model == "无模型文件":
+    if image_encoder_model == "无模型文件" or image_encoder_model == "无":
         image_encoder_model = None
     
     # 加载基础模型
-    model_list = [os.path.join(dit_dir, dit_model), os.path.join(t5_dir, t5_model), os.path.join(vae_dir, vae_model)]
+    dit_model_paths = [os.path.join(dit_dir, dit_model) for dit_model in dit_models]
+    model_list = [
+        dit_model_paths,  # 支持多个 DIT 模型路径
+        os.path.join(t5_dir, t5_model),
+        os.path.join(vae_dir, vae_model)
+    ]
     if image_encoder_model and image_encoder_dir:
         model_manager.load_models([os.path.join(image_encoder_dir, image_encoder_model)], torch_dtype=torch.float32)
         model_list.insert(0, os.path.join(image_encoder_dir, image_encoder_model))
@@ -130,7 +135,7 @@ def load_models(dit_model, t5_model, vae_model, image_encoder_model=None, lora_p
         pipe.enable_vram_management(num_persistent_param_in_dit=None)
     
     pipe.hardware_info = get_hardware_info()
-    pipe.model_name = f"DIT: {dit_model}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
+    pipe.model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
     pipe.lora_info = ", ".join([f"{name} ({weight})" for name, weight in loaded_loras.items()]) if loaded_loras else "无"
     return pipe
 
@@ -148,15 +153,16 @@ def adaptive_resolution(image):
 # 生成文生视频
 def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, width, 
                  num_frames, cfg_scale, sigma_shift, tea_cache_l1_thresh, tea_cache_model_id, 
-                 dit_model, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
+                 dit_models, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
                  rand_device, tiled, tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, 
                  torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
     global pipe
     
     # 从提示词中提取 LoRA 并加载模型
     loras, cleaned_prompt = extract_lora_from_prompt(prompt)
-    if pipe is None or getattr(pipe, "model_name", None) != f"DIT: {dit_model}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "") or loras != list(loaded_loras.items()):
-        pipe = load_models(dit_model, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, use_usp)
+    current_model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
+    if pipe is None or getattr(pipe, "model_name", None) != current_model_name or loras != list(loaded_loras.items()):
+        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, use_usp)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -219,7 +225,7 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
 - 帧率：{fps} FPS
 - 视频时长：{num_frames / int(fps):.1f}秒
 {mem_info}
-- 模型版本：DIT: {dit_model}, T5: {t5_model}, VAE: {vae_model}{', Image Encoder: ' + image_encoder_model if image_encoder_model else ''}
+- 模型版本：DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}{', Image Encoder: ' + image_encoder_model if image_encoder_model else ''}
 - 使用Tiled：{'是' if tiled else '否'}
 - Tile Size：({tile_size_x}, {tile_size_y})
 - Tile Stride：({tile_stride_x}, {tile_stride_y})
@@ -236,15 +242,16 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
 # 生成图生视频
 def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, height, width, 
                 num_frames, cfg_scale, sigma_shift, tea_cache_l1_thresh, tea_cache_model_id, 
-                dit_model, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
+                dit_models, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
                 rand_device, tiled, tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, 
                 torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
     global pipe
     
     # 从提示词中提取 LoRA 并加载模型
     loras, cleaned_prompt = extract_lora_from_prompt(prompt)
-    if pipe is None or getattr(pipe, "model_name", None) != f"DIT: {dit_model}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "") or loras != list(loaded_loras.items()):
-        pipe = load_models(dit_model, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, use_usp)
+    current_model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
+    if pipe is None or getattr(pipe, "model_name", None) != current_model_name or loras != list(loaded_loras.items()):
+        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, use_usp)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -311,7 +318,7 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
 - 帧率：{fps} FPS
 - 视频时长：{num_frames / int(fps):.1f}秒
 {mem_info}
-- 模型版本：DIT: {dit_model}, T5: {t5_model}, VAE: {vae_model}{', Image Encoder: ' + image_encoder_model if image_encoder_model else ''}
+- 模型版本：DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}{', Image Encoder: ' + image_encoder_model if image_encoder_model else ''}
 - 使用Tiled：{'是' if tiled else '否'}
 - Tile Size：({tile_size_x}, {tile_size_y})
 - Tile Stride：({tile_stride_x}, {tile_stride_y})
@@ -327,7 +334,7 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
 
 # 生成视频生视频
 def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, height, width, 
-                num_frames, cfg_scale, sigma_shift, dit_model, t5_model, vae_model, 
+                num_frames, cfg_scale, sigma_shift, dit_models, t5_model, vae_model, 
                 image_encoder_model, fps, denoising_strength, rand_device, tiled, 
                 tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, torch_dtype, 
                 use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
@@ -335,8 +342,9 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
     
     # 从提示词中提取 LoRA 并加载模型
     loras, cleaned_prompt = extract_lora_from_prompt(prompt)
-    if pipe is None or getattr(pipe, "model_name", None) != f"DIT: {dit_model}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "") or loras != list(loaded_loras.items()):
-        pipe = load_models(dit_model, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, use_usp)
+    current_model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
+    if pipe is None or getattr(pipe, "model_name", None) != current_model_name or loras != list(loaded_loras.items()):
+        pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, use_usp)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -403,7 +411,7 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
 - 帧率：{fps} FPS
 - 视频时长：{num_frames / int(fps):.1f}秒
 {mem_info}
-- 模型版本：DIT: {dit_model}, T5: {t5_model}, VAE: {vae_model}{', Image Encoder: ' + image_encoder_model if image_encoder_model else ''}
+- 模型版本：DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}{', Image Encoder: ' + image_encoder_model if image_encoder_model else ''}
 - 使用Tiled：{'是' if tiled else '否'}
 - Tile Size：({tile_size_x}, {tile_size_y})
 - Tile Stride：({tile_stride_x}, {tile_stride_y})
@@ -438,7 +446,13 @@ def create_wan_video_tab():
         
         # 顶部模型选择
         with gr.Row():
-            dit_model = gr.Dropdown(label="选择 DIT 模型", choices=dit_models, value=dit_models[0])
+            # 修改为支持多选的 DIT 模型选择
+            dit_model = gr.Dropdown(
+                label="选择 DIT 模型 (可多选)",
+                choices=dit_models,
+                value=[dit_models[0]],  # 默认选中第一个模型
+                multiselect=True
+            )
             t5_model = gr.Dropdown(label="选择 T5 模型", choices=t5_models, value=t5_models[0])
             vae_model = gr.Dropdown(label="选择 VAE 模型", choices=vae_models, value=vae_models[0])
             image_encoder_model = gr.Dropdown(label="选择 Image Encoder 模型 (可选)", choices=["无"] + image_encoder_models, value="无")
@@ -499,7 +513,7 @@ def create_wan_video_tab():
                         sigma_shift,
                         tea_cache_l1_thresh,
                         tea_cache_model_id,
-                        dit_model,
+                        dit_model,  # 改为多选输入
                         t5_model,
                         vae_model,
                         image_encoder_model,
@@ -581,7 +595,7 @@ def create_wan_video_tab():
                         sigma_shift_i2v,
                         tea_cache_l1_thresh_i2v,
                         tea_cache_model_id_i2v,
-                        dit_model,
+                        dit_model,  # 改为多选输入
                         t5_model,
                         vae_model,
                         image_encoder_model,
@@ -650,7 +664,7 @@ def create_wan_video_tab():
                         num_frames_v2v,
                         cfg_scale_v2v,
                         sigma_shift_v2v,
-                        dit_model,
+                        dit_model,  # 改为多选输入
                         t5_model,
                         vae_model,
                         image_encoder_model,
