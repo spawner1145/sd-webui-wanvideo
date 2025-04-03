@@ -65,11 +65,11 @@ def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_
     
     # 定义模型目录
     base_dir = "models/wan2.1"
-    dit_dir = os.path.join(base_dir, "dit")
-    t5_dir = os.path.join(base_dir, "t5")
-    vae_dir = os.path.join(base_dir, "vae")
-    lora_dir = os.path.join(base_dir, "lora")
-    image_encoder_dir = os.path.join(base_dir, "image_encoder") if image_encoder_model else None
+    dit_dir = os.path.join(base_dir, "dit").replace("\\", "/")
+    t5_dir = os.path.join(base_dir, "t5").replace("\\", "/")
+    vae_dir = os.path.join(base_dir, "vae").replace("\\", "/")
+    lora_dir = os.path.join(base_dir, "lora").replace("\\", "/")
+    image_encoder_dir = os.path.join(base_dir, "image_encoder").replace("\\", "/") if image_encoder_model else None
     
     # 自动创建目录
     os.makedirs(dit_dir, exist_ok=True)
@@ -94,15 +94,14 @@ def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_
         image_encoder_model = None
     
     # 将多个 DIT 模型文件视为一个整体
-    dit_model_paths = [os.path.join(dit_dir, dit_model) for dit_model in dit_models if dit_model != "无模型文件"]
+    dit_model_paths = [os.path.join(dit_dir, dit_model).replace("\\", "/") for dit_model in dit_models if dit_model != "无模型文件"]
     if not dit_model_paths:
         raise Exception("未选择有效的 DIT 模型文件")
     
-    # 组织 model_list，DIT 模型作为一个嵌套列表
     model_list = [
         dit_model_paths,  # 多个 DIT 文件合并加载
-        os.path.join(t5_dir, t5_model),
-        os.path.join(vae_dir, vae_model)
+        os.path.join(t5_dir, t5_model).replace("\\", "/"),
+        os.path.join(vae_dir, vae_model).replace("\\", "/")
     ]
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -121,7 +120,7 @@ def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_
     
     # 加载 Image Encoder（若存在）
     if image_encoder_model:
-        image_encoder_path = os.path.join(image_encoder_dir, image_encoder_model)
+        image_encoder_path = os.path.join(image_encoder_dir, image_encoder_model).replace("\\", "/")
         if not os.path.exists(image_encoder_path):
             raise FileNotFoundError(f"Image Encoder 文件 {image_encoder_path} 不存在，请检查路径")
         logging.info(f"加载 Image Encoder: {image_encoder_path} (使用 {image_encoder_torch_dtype})")
@@ -460,11 +459,11 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
 def create_wan_video_tab():
     # 定义模型目录
     base_dir = "models/wan2.1"
-    dit_dir = os.path.join(base_dir, "dit")
-    t5_dir = os.path.join(base_dir, "t5")
-    vae_dir = os.path.join(base_dir, "vae")
-    image_encoder_dir = os.path.join(base_dir, "image_encoder")
-    lora_dir = os.path.join(base_dir, "lora")
+    dit_dir = os.path.join(base_dir, "dit").replace("\\", "/")
+    t5_dir = os.path.join(base_dir, "t5").replace("\\", "/")
+    vae_dir = os.path.join(base_dir, "vae").replace("\\", "/")
+    image_encoder_dir = os.path.join(base_dir, "image_encoder").replace("\\", "/")
+    lora_dir = os.path.join(base_dir, "lora").replace("\\", "/")
     
     # 获取模型文件列表
     dit_models = get_model_files(dit_dir)
