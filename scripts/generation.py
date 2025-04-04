@@ -539,7 +539,7 @@ def create_wan_video_tab():
                             fps = gr.Slider(label="输出帧率 (FPS)", minimum=1, maximum=60, value=15, step=1)
 
                         with gr.Accordion("高级参数", open=False):
-                            num_inference_steps = gr.Slider(label="推理步数", minimum=20, maximum=100, value=50, step=1)
+                            num_inference_steps = gr.Slider(label="推理步数", minimum=1, maximum=100, value=15, step=1)
                             cfg_scale = gr.Number(label="CFG Scale", value=5.0)
                             sigma_shift = gr.Number(label="Sigma Shift", value=5.0)
                             seed = gr.Number(label="随机种子 (-1为随机)", value=-1, precision=0)
@@ -638,7 +638,7 @@ def create_wan_video_tab():
                             fps_i2v = gr.Slider(label="输出帧率 (FPS)", minimum=1, maximum=60, value=15, step=1)
 
                         with gr.Accordion("高级参数", open=False):
-                            num_inference_steps_i2v = gr.Slider(label="推理步数", minimum=20, maximum=100, value=50, step=1)
+                            num_inference_steps_i2v = gr.Slider(label="推理步数", minimum=1, maximum=100, value=15, step=1)
                             cfg_scale_i2v = gr.Number(label="CFG Scale", value=5.0)
                             sigma_shift_i2v = gr.Number(label="Sigma Shift", value=5.0)
                             seed_i2v = gr.Number(label="随机种子 (-1为随机)", value=-1, precision=0)
@@ -743,7 +743,7 @@ def create_wan_video_tab():
                             fps_v2v = gr.Slider(label="输出帧率 (FPS)", minimum=1, maximum=60, value=15, step=1)
 
                         with gr.Accordion("高级参数", open=False):
-                            num_inference_steps_v2v = gr.Slider(label="推理步数", minimum=20, maximum=100, value=50, step=1)
+                            num_inference_steps_v2v = gr.Slider(label="推理步数", minimum=1, maximum=100, value=15, step=1)
                             cfg_scale_v2v = gr.Number(label="CFG Scale", value=5.0)
                             sigma_shift_v2v = gr.Number(label="Sigma Shift", value=5.0)
                             seed_v2v = gr.Number(label="随机种子 (-1为随机)", value=-1, precision=0)
