@@ -5,7 +5,7 @@
 
 注意一下，scripts文件夹内有个models文件夹，如果你用webui插件的把那个models文件夹剪切到webui根目录下和原来的models文件夹合并
 
-如果你是单独跑generation.py,把scripts作为工作目录打开（注意不是项目根目录！）
+此项目不是必须作为webui插件，scripts文件夹下的generation.py可以单独运行，如果你是单独跑generation.py，把scripts作为工作目录打开，注意先把requirements.txt里的依赖装好（注意不是项目根目录！）
 
 模型装好，路径示例：
 
