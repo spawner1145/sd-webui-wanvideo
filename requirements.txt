@@ -1,3 +1,6 @@
-modelscope
-huggingface_hub
+gradio
+psutil
+numpy
+Pillow
+tqdm
 git+https://github.com/modelscope/DiffSynth-Studio
