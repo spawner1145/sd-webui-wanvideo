@@ -46,7 +46,7 @@ def get_model_files(directory):
         return ["无模型文件"]
     files = [
         f for f in os.listdir(directory)
-        if os.path.isfile(os.path.join(directory, f)) and not f.endswith('.txt')
+        if os.path.isfile(os.path.join(directory, f)) and not f.endswith('.txt') and not f.endswith('.json')
     ]
     return files if files else ["无模型文件"]
 
