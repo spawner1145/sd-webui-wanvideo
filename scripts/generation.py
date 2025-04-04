@@ -306,7 +306,7 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
 
         # 调用 WanVideoPipeline
         frames = pipe(
-            prompt=cleaned_prompt or "默认提示APR词",
+            prompt=cleaned_prompt or "默认提示词",
             negative_prompt=negative_prompt or "",
             input_image=img,
             input_video=None,
