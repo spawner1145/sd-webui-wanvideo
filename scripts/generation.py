@@ -60,7 +60,8 @@ def extract_lora_from_prompt(prompt):
 
 # 加载模型和 LoRA
 def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_prompt="", 
-                torch_dtype="bfloat16", image_encoder_torch_dtype="float32", use_usp=False):
+                torch_dtype="bfloat16", image_encoder_torch_dtype="float32", use_usp=False, 
+                num_persistent_param_in_dit=None):
     # 定义模型目录
     base_dir = "models/wan2.1"
     dit_dir = os.path.join(base_dir, "dit")
@@ -152,13 +153,14 @@ def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_
     # 创建管道
     pipe = WanVideoPipeline.from_model_manager(model_manager, torch_dtype=torch_dtype, device=device, use_usp=use_usp)
     if device == "cuda":
-        pipe.enable_vram_management(num_persistent_param_in_dit=None)
+        pipe.enable_vram_management(num_persistent_param_in_dit=num_persistent_param_in_dit)
     
     # 设置管道信息
     pipe.hardware_info = get_hardware_info()
     pipe.model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
     pipe.lora_info = ", ".join([f"{name} ({weight})" for name, weight in loaded_loras.items()]) if loaded_loras else "无"
     pipe.torch_dtype_info = f"DIT/T5/VAE: {torch_dtype}, Image Encoder: {image_encoder_torch_dtype if image_encoder_model else '未使用'}"
+    pipe.num_persistent_param_in_dit = num_persistent_param_in_dit  # 新增属性以便显示
     return pipe
 
 # 自适应图片分辨率
@@ -177,9 +179,15 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
                  num_frames, cfg_scale, sigma_shift, tea_cache_l1_thresh, tea_cache_model_id, 
                  dit_models, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
                  rand_device, tiled, tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, 
-                 torch_dtype, image_encoder_torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
+                 torch_dtype, image_encoder_torch_dtype, use_usp, enable_num_persistent=None, 
+                 num_persistent_param_in_dit=None, progress_bar_cmd=tqdm, progress_bar_st=None):
+    # 处理 num_persistent_param_in_dit 的开关逻辑
+    if not enable_num_persistent:
+        num_persistent_param_in_dit = None
+    
     # 每次生成都创建新的 pipe
-    pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
+    pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, 
+                      image_encoder_torch_dtype, use_usp, num_persistent_param_in_dit)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -255,6 +263,7 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
 - TeaCache Model ID：{tea_cache_model_id}
 - Torch 数据类型：{pipe.torch_dtype_info}
 - 使用USP：{'是' if use_usp else '否'}
+- 显存管理参数 (num_persistent_param_in_dit)：{num_persistent_param_in_dit if num_persistent_param_in_dit is not None else '未限制'}
 - 已加载LoRA：{pipe.lora_info}
 """
         return output_path, info
@@ -268,9 +277,15 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
                 num_frames, cfg_scale, sigma_shift, tea_cache_l1_thresh, tea_cache_model_id, 
                 dit_models, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
                 rand_device, tiled, tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, 
-                torch_dtype, image_encoder_torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
+                torch_dtype, image_encoder_torch_dtype, use_usp, enable_num_persistent=None, 
+                num_persistent_param_in_dit=None, progress_bar_cmd=tqdm, progress_bar_st=None):
+    # 处理 num_persistent_param_in_dit 的开关逻辑
+    if not enable_num_persistent:
+        num_persistent_param_in_dit = None
+    
     # 每次生成都创建新的 pipe
-    pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
+    pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, 
+                      image_encoder_torch_dtype, use_usp, num_persistent_param_in_dit)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -291,7 +306,7 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
 
         # 调用 WanVideoPipeline
         frames = pipe(
-            prompt=cleaned_prompt or "默认提示词",
+            prompt=cleaned_prompt or "默认提示APR词",
             negative_prompt=negative_prompt or "",
             input_image=img,
             input_video=None,
@@ -350,6 +365,7 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
 - TeaCache Model ID：{tea_cache_model_id}
 - Torch 数据类型：{pipe.torch_dtype_info}
 - 使用USP：{'是' if use_usp else '否'}
+- 显存管理参数 (num_persistent_param_in_dit)：{num_persistent_param_in_dit if num_persistent_param_in_dit is not None else '未限制'}
 - 已加载LoRA：{pipe.lora_info}
 """
         return output_path, info
@@ -363,9 +379,15 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
                 num_frames, cfg_scale, sigma_shift, dit_models, t5_model, vae_model, 
                 image_encoder_model, fps, denoising_strength, rand_device, tiled, 
                 tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, torch_dtype, 
-                image_encoder_torch_dtype, use_usp, progress_bar_cmd=tqdm, progress_bar_st=None):
+                image_encoder_torch_dtype, use_usp, enable_num_persistent=None, 
+                num_persistent_param_in_dit=None, progress_bar_cmd=tqdm, progress_bar_st=None):
+    # 处理 num_persistent_param_in_dit 的开关逻辑
+    if not enable_num_persistent:
+        num_persistent_param_in_dit = None
+    
     # 每次生成都创建新的 pipe
-    pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, image_encoder_torch_dtype, use_usp)
+    pipe = load_models(dit_models, t5_model, vae_model, image_encoder_model, prompt, torch_dtype, 
+                      image_encoder_torch_dtype, use_usp, num_persistent_param_in_dit)
     
     start_time = time.time()
     if torch.cuda.is_available():
@@ -443,6 +465,7 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
 - Tile Stride：({tile_stride_x}, {tile_stride_y})
 - Torch 数据类型：{pipe.torch_dtype_info}
 - 使用USP：{'是' if use_usp else '否'}
+- 显存管理参数 (num_persistent_param_in_dit)：{num_persistent_param_in_dit if num_persistent_param_in_dit is not None else '未限制'}
 - 已加载LoRA：{pipe.lora_info}
 """
         return output_path, info
@@ -482,7 +505,7 @@ def create_wan_video_tab():
             )
             t5_model = gr.Dropdown(label="选择 T5 模型", choices=t5_models, value=t5_models[0])
             vae_model = gr.Dropdown(label="选择 VAE 模型", choices=vae_models, value=vae_models[0])
-            image_encoder_model = gr.Dropdown(label="选择 Image Encoder 模型 (可选)", choices=["无"] + image_encoder_models, value="无")
+            image_encoder_model = gr.Dropdown(label="选择 Image Encoder 模型 (图生视频必选)", choices=["无"] + image_encoder_models, value="无")
         
         with gr.Tabs():
             with gr.Tab("文本生成视频"):
@@ -516,6 +539,26 @@ def create_wan_video_tab():
                             torch_dtype = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
                             image_encoder_torch_dtype = gr.Dropdown(label="Image Encoder 数据类型", choices=["float32", "bfloat16"], value="float32")
                             use_usp = gr.Checkbox(label="使用USP (Unified Sequence Parallel)", value=False)
+                            nproc_per_node = gr.Number(label="USP 每节点进程数 (需要 torchrun 运行)", value=1, minimum=1, precision=0, visible=False)
+                            enable_num_persistent = gr.Checkbox(label="启用显存优化参数 (num_persistent_param_in_dit)", value=False)
+                            num_persistent_param_in_dit = gr.Slider(
+                                label="显存管理参数值 (值越小显存需求越少,但需要时间变长)",
+                                minimum=0,
+                                maximum=10**10,
+                                value=7*10**9,
+                                step=10**8,
+                                visible=False,
+                                info="启用后调整此值，0 表示最低显存需求"
+                            )
+
+                            # 动态显示 nproc_per_node 和 num_persistent_param_in_dit
+                            def toggle_nproc_visibility(use_usp):
+                                return gr.update(visible=use_usp)
+                            use_usp.change(fn=toggle_nproc_visibility, inputs=use_usp, outputs=nproc_per_node)
+
+                            def toggle_num_persistent_visibility(enable):
+                                return gr.update(visible=enable)
+                            enable_num_persistent.change(fn=toggle_num_persistent_visibility, inputs=enable_num_persistent, outputs=num_persistent_param_in_dit)
 
                         with gr.Accordion("TeaCache 参数", open=False):
                             tea_cache_l1_thresh = gr.Number(label="TeaCache L1阈值 (越大越快但质量下降)", value=0.07)
@@ -555,7 +598,9 @@ def create_wan_video_tab():
                         tile_stride_y,
                         torch_dtype,
                         image_encoder_torch_dtype,
-                        use_usp
+                        use_usp,
+                        enable_num_persistent,
+                        num_persistent_param_in_dit
                     ],
                     outputs=[output_video, info_output]
                 )
@@ -593,6 +638,26 @@ def create_wan_video_tab():
                             torch_dtype_i2v = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
                             image_encoder_torch_dtype_i2v = gr.Dropdown(label="Image Encoder 数据类型", choices=["float32", "bfloat16"], value="float32")
                             use_usp_i2v = gr.Checkbox(label="使用USP (Unified Sequence Parallel)", value=False)
+                            nproc_per_node_i2v = gr.Number(label="USP 每节点进程数 (需要 torchrun 运行)", value=1, minimum=1, precision=0, visible=False)
+                            enable_num_persistent_i2v = gr.Checkbox(label="启用显存优化参数 (num_persistent_param_in_dit)", value=False)
+                            num_persistent_param_in_dit_i2v = gr.Slider(
+                                label="显存管理参数值 (值越小显存需求越少,但需要时间变长)",
+                                minimum=0,
+                                maximum=10**10,
+                                value=7*10**9,
+                                step=10**8,
+                                visible=False,
+                                info="启用后调整此值，0 表示最低显存需求"
+                            )
+
+                            # 动态显示 nproc_per_node_i2v 和 num_persistent_param_in_dit_i2v
+                            def toggle_nproc_visibility(use_usp):
+                                return gr.update(visible=use_usp)
+                            use_usp_i2v.change(fn=toggle_nproc_visibility, inputs=use_usp_i2v, outputs=nproc_per_node_i2v)
+
+                            def toggle_num_persistent_visibility(enable):
+                                return gr.update(visible=enable)
+                            enable_num_persistent_i2v.change(fn=toggle_num_persistent_visibility, inputs=enable_num_persistent_i2v, outputs=num_persistent_param_in_dit_i2v)
 
                         with gr.Accordion("TeaCache 参数", open=False):
                             tea_cache_l1_thresh_i2v = gr.Number(label="TeaCache L1阈值 (越大越快但质量下降)", value=0.19)
@@ -639,7 +704,9 @@ def create_wan_video_tab():
                         tile_stride_y_i2v,
                         torch_dtype_i2v,
                         image_encoder_torch_dtype_i2v,
-                        use_usp_i2v
+                        use_usp_i2v,
+                        enable_num_persistent_i2v,
+                        num_persistent_param_in_dit_i2v
                     ],
                     outputs=[output_video_i2v, info_output_i2v]
                 )
@@ -676,6 +743,26 @@ def create_wan_video_tab():
                             torch_dtype_v2v = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
                             image_encoder_torch_dtype_v2v = gr.Dropdown(label="Image Encoder 数据类型", choices=["float32", "bfloat16"], value="float32")
                             use_usp_v2v = gr.Checkbox(label="使用USP (Unified Sequence Parallel)", value=False)
+                            nproc_per_node_v2v = gr.Number(label="USP 每节点进程数 (需要 torchrun 运行)", value=1, minimum=1, precision=0, visible=False)
+                            enable_num_persistent_v2v = gr.Checkbox(label="启用显存优化参数 (num_persistent_param_in_dit)", value=False)
+                            num_persistent_param_in_dit_v2v = gr.Slider(
+                                label="显存管理参数值 (值越小显存需求越少,但需要时间变长)",
+                                minimum=0,
+                                maximum=10**10,
+                                value=7*10**9,
+                                step=10**8,
+                                visible=False,
+                                info="启用后调整此值，0 表示最低显存需求"
+                            )
+
+                            # 动态显示 nproc_per_node_v2v 和 num_persistent_param_in_dit_v2v
+                            def toggle_nproc_visibility(use_usp):
+                                return gr.update(visible=use_usp)
+                            use_usp_v2v.change(fn=toggle_nproc_visibility, inputs=use_usp_v2v, outputs=nproc_per_node_v2v)
+
+                            def toggle_num_persistent_visibility(enable):
+                                return gr.update(visible=enable)
+                            enable_num_persistent_v2v.change(fn=toggle_num_persistent_visibility, inputs=enable_num_persistent_v2v, outputs=num_persistent_param_in_dit_v2v)
 
                         generate_v2v_btn = gr.Button("生成视频")
 
@@ -710,7 +797,9 @@ def create_wan_video_tab():
                         tile_stride_y_v2v,
                         torch_dtype_v2v,
                         image_encoder_torch_dtype_v2v,
-                        use_usp_v2v
+                        use_usp_v2v,
+                        enable_num_persistent_v2v,
+                        num_persistent_param_in_dit_v2v
                     ],
                     outputs=[output_video_v2v, info_output_v2v]
                 )
@@ -722,6 +811,8 @@ if IN_WEBUI:
 else:
     if __name__ == "__main__":
         interface = create_wan_video_tab()
+        print("提示：若启用 USP，需使用以下命令运行：")
+        print("torchrun --standalone --nproc_per_node=<进程数> generation.py")
         interface.launch(
             allowed_paths=["outputs"]
         )
