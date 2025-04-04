@@ -105,8 +105,22 @@ def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_
     ]
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    torch_dtype = torch.bfloat16 if torch_dtype == "bfloat16" else torch.float8_e4m3fn
-    image_encoder_torch_dtype = torch.float32 if image_encoder_torch_dtype == "float32" else torch.bfloat16
+    # 支持 FP16、BF16 和 FP8
+    if torch_dtype == "float16":
+        torch_dtype = torch.float16
+    elif torch_dtype == "bfloat16":
+        torch_dtype = torch.bfloat16
+    else:
+        torch_dtype = torch.float8_e4m3fn
+    
+    # Image Encoder 的数据类型支持
+    if image_encoder_torch_dtype == "float16":
+        image_encoder_torch_dtype = torch.float16
+    elif image_encoder_torch_dtype == "float32":
+        image_encoder_torch_dtype = torch.float32
+    else:
+        image_encoder_torch_dtype = torch.bfloat16
+    
     model_manager = ModelManager(device="cpu", torch_dtype=torch_dtype)
     
     # 检查文件路径
@@ -536,8 +550,8 @@ def create_wan_video_tab():
                             tile_size_y = gr.Number(label="Tile Size Y", value=52, precision=0)
                             tile_stride_x = gr.Number(label="Tile Stride X", value=15, precision=0)
                             tile_stride_y = gr.Number(label="Tile Stride Y", value=26, precision=0)
-                            torch_dtype = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
-                            image_encoder_torch_dtype = gr.Dropdown(label="Image Encoder 数据类型", choices=["float32", "bfloat16"], value="float32")
+                            torch_dtype = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["float16", "bfloat16", "float8_e4m3fn"], value="bfloat16")
+                            image_encoder_torch_dtype = gr.Dropdown(label="Image Encoder 数据类型", choices=["float16", "float32", "bfloat16"], value="float32")
                             use_usp = gr.Checkbox(label="使用USP (Unified Sequence Parallel)", value=False)
                             nproc_per_node = gr.Number(label="USP 每节点进程数 (需要 torchrun 运行)", value=1, minimum=1, precision=0, visible=False)
                             enable_num_persistent = gr.Checkbox(label="启用显存优化参数 (num_persistent_param_in_dit)", value=False)
@@ -635,8 +649,8 @@ def create_wan_video_tab():
                             tile_size_y_i2v = gr.Number(label="Tile Size Y", value=52, precision=0)
                             tile_stride_x_i2v = gr.Number(label="Tile Stride X", value=15, precision=0)
                             tile_stride_y_i2v = gr.Number(label="Tile Stride Y", value=26, precision=0)
-                            torch_dtype_i2v = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
-                            image_encoder_torch_dtype_i2v = gr.Dropdown(label="Image Encoder 数据类型", choices=["float32", "bfloat16"], value="float32")
+                            torch_dtype_i2v = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["float16", "bfloat16", "float8_e4m3fn"], value="bfloat16")
+                            image_encoder_torch_dtype_i2v = gr.Dropdown(label="Image Encoder 数据类型", choices=["float16", "float32", "bfloat16"], value="float32")
                             use_usp_i2v = gr.Checkbox(label="使用USP (Unified Sequence Parallel)", value=False)
                             nproc_per_node_i2v = gr.Number(label="USP 每节点进程数 (需要 torchrun 运行)", value=1, minimum=1, precision=0, visible=False)
                             enable_num_persistent_i2v = gr.Checkbox(label="启用显存优化参数 (num_persistent_param_in_dit)", value=False)
@@ -740,8 +754,8 @@ def create_wan_video_tab():
                             tile_size_y_v2v = gr.Number(label="Tile Size Y", value=52, precision=0)
                             tile_stride_x_v2v = gr.Number(label="Tile Stride X", value=15, precision=0)
                             tile_stride_y_v2v = gr.Number(label="Tile Stride Y", value=26, precision=0)
-                            torch_dtype_v2v = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["bfloat16", "float8_e4m3fn"], value="bfloat16")
-                            image_encoder_torch_dtype_v2v = gr.Dropdown(label="Image Encoder 数据类型", choices=["float32", "bfloat16"], value="float32")
+                            torch_dtype_v2v = gr.Dropdown(label="DIT/T5/VAE 数据类型", choices=["float16", "bfloat16", "float8_e4m3fn"], value="bfloat16")
+                            image_encoder_torch_dtype_v2v = gr.Dropdown(label="Image Encoder 数据类型", choices=["float16", "float32", "bfloat16"], value="float32")
                             use_usp_v2v = gr.Checkbox(label="使用USP (Unified Sequence Parallel)", value=False)
                             nproc_per_node_v2v = gr.Number(label="USP 每节点进程数 (需要 torchrun 运行)", value=1, minimum=1, precision=0, visible=False)
                             enable_num_persistent_v2v = gr.Checkbox(label="启用显存优化参数 (num_persistent_param_in_dit)", value=False)
