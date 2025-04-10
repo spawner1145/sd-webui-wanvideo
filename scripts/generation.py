@@ -308,9 +308,9 @@ def generate_i2v(image, end_image, prompt, negative_prompt, num_inference_steps,
 
     try:
         if image is None:
-            raise ValueError("请上传初始图片")
+            raise ValueError("请上传首帧")
         img = Image.open(image).convert("RGB")
-        # 如果提供了结束图片，则加载它
+        # 如果提供了尾帧，则加载它
         end_img = Image.open(end_image).convert("RGB") if end_image else None
 
         # 处理随机种子
@@ -326,7 +326,7 @@ def generate_i2v(image, end_image, prompt, negative_prompt, num_inference_steps,
             prompt=cleaned_prompt or "默认提示词",
             negative_prompt=negative_prompt or "",
             input_image=img,
-            end_image=end_img,  # 新增的可选结束图片参数
+            end_image=end_img,  # 新增的可选尾帧参数
             input_video=None,
             denoising_strength=float(denoising_strength),
             seed=actual_seed,
@@ -385,7 +385,7 @@ def generate_i2v(image, end_image, prompt, negative_prompt, num_inference_steps,
 - 使用USP：{'是' if use_usp else '否'}
 - 显存管理参数 (num_persistent_param_in_dit)：{num_persistent_param_in_dit if num_persistent_param_in_dit is not None else '未限制'}
 - 已加载LoRA：{pipe.lora_info}
-- 是否使用结束图片：{'是' if end_image else '否'}
+- 是否使用尾帧：{'是' if end_image else '否'}
 """
         return output_path, info
     except Exception as e:
@@ -630,8 +630,8 @@ def create_wan_video_tab():
             with gr.Tab("图片生成视频"):
                 with gr.Row():
                     with gr.Column():
-                        image_input = gr.Image(label="上传初始图片", type="filepath")
-                        end_image_input = gr.Image(label="上传结束图片 (可选)", type="filepath")  # 新增结束图片输入
+                        image_input = gr.Image(label="上传首帧", type="filepath")
+                        end_image_input = gr.Image(label="上传尾帧 (可选)", type="filepath")  # 新增尾帧输入
                         adapt_resolution_btn = gr.Button("自适应图片分辨率")
                         prompt_i2v = gr.Textbox(label="正向提示词", lines=3, placeholder="输入描述视频内容的提示词，可包含 <lora:模型文件名:权重>")
                         negative_prompt_i2v = gr.Textbox(
@@ -702,7 +702,7 @@ def create_wan_video_tab():
                     fn=generate_i2v,
                     inputs=[
                         image_input,
-                        end_image_input,  # 新增结束图片输入
+                        end_image_input,  # 新增尾帧输入
                         prompt_i2v,
                         negative_prompt_i2v,
                         num_inference_steps_i2v,
