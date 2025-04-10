@@ -11,6 +11,7 @@ from tqdm import tqdm
 import random
 import logging
 import re
+from modelscope import snapshot_download, dataset_snapshot_download
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -286,8 +287,8 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
     finally:
         del pipe  # 确保每次生成后清理 pipe
 
-# 生成图生视频
-def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, height, width, 
+# 生成图生视频（新增 end_image 参数）
+def generate_i2v(image, end_image, prompt, negative_prompt, num_inference_steps, seed, height, width, 
                 num_frames, cfg_scale, sigma_shift, tea_cache_l1_thresh, tea_cache_model_id, 
                 dit_models, t5_model, vae_model, image_encoder_model, fps, denoising_strength, 
                 rand_device, tiled, tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, 
@@ -309,6 +310,8 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
         if image is None:
             raise ValueError("请上传初始图片")
         img = Image.open(image).convert("RGB")
+        # 如果提供了结束图片，则加载它
+        end_img = Image.open(end_image).convert("RGB") if end_image else None
 
         # 处理随机种子
         actual_seed = int(seed)
@@ -318,11 +321,12 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
         # 从提示词中提取 LoRA 并清理提示词
         _, cleaned_prompt = extract_lora_from_prompt(prompt)
 
-        # 调用 WanVideoPipeline
+        # 调用 WanVideoPipeline，新增 end_image 参数
         frames = pipe(
             prompt=cleaned_prompt or "默认提示词",
             negative_prompt=negative_prompt or "",
             input_image=img,
+            end_image=end_img,  # 新增的可选结束图片参数
             input_video=None,
             denoising_strength=float(denoising_strength),
             seed=actual_seed,
@@ -381,6 +385,7 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
 - 使用USP：{'是' if use_usp else '否'}
 - 显存管理参数 (num_persistent_param_in_dit)：{num_persistent_param_in_dit if num_persistent_param_in_dit is not None else '未限制'}
 - 已加载LoRA：{pipe.lora_info}
+- 是否使用结束图片：{'是' if end_image else '否'}
 """
         return output_path, info
     except Exception as e:
@@ -388,8 +393,8 @@ def generate_i2v(image, prompt, negative_prompt, num_inference_steps, seed, heig
     finally:
         del pipe  # 确保每次生成后清理 pipe
 
-# 生成视频生视频
-def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, height, width, 
+# 生成视频生视频（新增 control_video 参数）
+def generate_v2v(video, control_video, prompt, negative_prompt, num_inference_steps, seed, height, width, 
                 num_frames, cfg_scale, sigma_shift, dit_models, t5_model, vae_model, 
                 image_encoder_model, fps, denoising_strength, rand_device, tiled, 
                 tile_size_x, tile_size_y, tile_stride_x, tile_stride_y, torch_dtype, 
@@ -408,9 +413,10 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
         torch.cuda.reset_peak_memory_stats()
 
     try:
-        if video is None:
-            raise ValueError("请上传初始视频")
-        video_data = VideoData(video, height=int(height), width=int(width))
+        if video is None and control_video is None:
+            raise ValueError("请至少上传初始视频或控制视频")
+        video_data = VideoData(video, height=int(height), width=int(width)) if video else None
+        control_video_data = VideoData(control_video, height=int(height), width=int(width)) if control_video else None
 
         # 处理随机种子
         actual_seed = int(seed)
@@ -420,12 +426,13 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
         # 从提示词中提取 LoRA 并清理提示词
         _, cleaned_prompt = extract_lora_from_prompt(prompt)
 
-        # 调用 WanVideoPipeline
+        # 调用 WanVideoPipeline，新增 control_video 参数
         frames = pipe(
             prompt=cleaned_prompt or "默认提示词",
             negative_prompt=negative_prompt or "",
             input_image=None,
             input_video=video_data,
+            control_video=control_video_data,  # 新增的可选控制视频参数
             denoising_strength=float(denoising_strength),
             seed=actual_seed,
             rand_device=rand_device,
@@ -481,6 +488,7 @@ def generate_v2v(video, prompt, negative_prompt, num_inference_steps, seed, heig
 - 使用USP：{'是' if use_usp else '否'}
 - 显存管理参数 (num_persistent_param_in_dit)：{num_persistent_param_in_dit if num_persistent_param_in_dit is not None else '未限制'}
 - 已加载LoRA：{pipe.lora_info}
+- 是否使用控制视频：{'是' if control_video else '否'}
 """
         return output_path, info
     except Exception as e:
@@ -623,6 +631,7 @@ def create_wan_video_tab():
                 with gr.Row():
                     with gr.Column():
                         image_input = gr.Image(label="上传初始图片", type="filepath")
+                        end_image_input = gr.Image(label="上传结束图片 (可选)", type="filepath")  # 新增结束图片输入
                         adapt_resolution_btn = gr.Button("自适应图片分辨率")
                         prompt_i2v = gr.Textbox(label="正向提示词", lines=3, placeholder="输入描述视频内容的提示词，可包含 <lora:模型文件名:权重>")
                         negative_prompt_i2v = gr.Textbox(
@@ -693,6 +702,7 @@ def create_wan_video_tab():
                     fn=generate_i2v,
                     inputs=[
                         image_input,
+                        end_image_input,  # 新增结束图片输入
                         prompt_i2v,
                         negative_prompt_i2v,
                         num_inference_steps_i2v,
@@ -729,6 +739,7 @@ def create_wan_video_tab():
                 with gr.Row():
                     with gr.Column():
                         video_input = gr.Video(label="上传初始视频", format="mp4")
+                        control_video_input = gr.Video(label="上传控制视频 (可选)", format="mp4")  # 新增控制视频输入
                         prompt_v2v = gr.Textbox(label="正向提示词", lines=3, placeholder="输入描述视频内容的提示词，可包含 <lora:模型文件名:权重>")
                         negative_prompt_v2v = gr.Textbox(
                             label="负向提示词",
@@ -788,6 +799,7 @@ def create_wan_video_tab():
                     fn=generate_v2v,
                     inputs=[
                         video_input,
+                        control_video_input,  # 新增控制视频输入
                         prompt_v2v,
                         negative_prompt_v2v,
                         num_inference_steps_v2v,
