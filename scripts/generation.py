@@ -15,6 +15,14 @@ from modelscope import snapshot_download, dataset_snapshot_download
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
+try:
+    from scripts.gradio_patch import money_patch_gradio
+    if money_patch_gradio():
+        logging.info("成功应用gradio补丁")
+    else:
+        logging.warning("gradio补丁导入失败")
+except Exception as e:
+    logging.error(e)
 
 # 检查是否在 WebUI 环境中运行
 try:
