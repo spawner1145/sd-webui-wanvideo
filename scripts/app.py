@@ -2,9 +2,9 @@ import logging
 import threading
 from threading import Lock
 from fastapi import FastAPI
-from backend.inferrence import *
-from backend.ui import *
-from backend.api import Api
+from backend_wanvideo.inferrence import *
+from backend_wanvideo.ui import *
+from backend_wanvideo.api import Api
 import uvicorn
 
 # 设置日志
@@ -16,7 +16,8 @@ try:
     else:
         logging.warning("gradio补丁导入失败")
 except Exception as e:
-    logging.error(f"Gradio补丁加载失败: {e}")
+    #logging.error(f"Gradio补丁加载失败: {e}")
+    pass
 
 # 检查是否在 WebUI 环境中运行
 try:
@@ -33,7 +34,7 @@ NPROC_PER_NODE = 1  # 默认 USP 进程数
 
 if IN_WEBUI:
     # WebUI 环境下，注册 UI 和 API 回调
-    from backend.api import on_app_started
+    from backend_wanvideo.api import on_app_started
     script_callbacks.on_ui_tabs(lambda: [(create_wan_video_tab(), "Wan Video", "wan_video_tab")])
     script_callbacks.on_app_started(on_app_started)
 else:
