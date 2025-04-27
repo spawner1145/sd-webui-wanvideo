@@ -151,7 +151,6 @@ class Api:
             self.endpoint_text2video,
             methods=["POST"],
             response_model=VideoResponse,
-            tags=["Video Generation"],
             summary="Generate video from text prompt",
             description="Creates a video based on a text prompt using the WanVideo model."
         )
@@ -160,7 +159,6 @@ class Api:
             self.endpoint_image2video,
             methods=["POST"],
             response_model=VideoResponse,
-            tags=["Video Generation"],
             summary="Generate video from an initial image",
             description="Creates a video starting from an initial image (and optional end image) with a text prompt."
         )
@@ -169,7 +167,6 @@ class Api:
             self.endpoint_video2video,
             methods=["POST"],
             response_model=VideoResponse,
-            tags=["Video Generation"],
             summary="Generate video from an input video",
             description="Creates a video by transforming an input video (with optional control video) using a text prompt."
         )
@@ -178,7 +175,6 @@ class Api:
             self.endpoint_models,
             methods=["GET"],
             response_model=ModelsResponse,
-            tags=["Model Management"],
             summary="List available models",
             description="Returns a list of available DIT, T5, VAE, Image Encoder, and LoRA model files."
         )
