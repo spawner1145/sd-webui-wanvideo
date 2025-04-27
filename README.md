@@ -10,7 +10,7 @@
 
 1. **models文件夹位置**
 
-   * 如果你使用的是 `sd-webui` 插件，请将 `scripts` 文件夹内的 `models` 文件夹剪切到 `webui` 根目录下，并与原有的 `models` 文件夹合并。
+   * 如果你使用的是 `sd-webui` 插件，请将 根目录内的 `models` 文件夹剪切到 `webui` 根目录下，并与原有的 `models` 文件夹合并。
    * 如果你是单独运行项目，则模型文件夹的路径结构如下：
 
      ```
@@ -72,7 +72,7 @@
 * **dit 模型**
   下载 [diffusion_pytorch_model.safetensors](https://www.modelscope.cn/models/Wan-AI/Wan2.1-T2V-1.3B/file/view/master?fileName=diffusion_pytorch_model.safetensors&status=2)，放入 `models/wan2.1/dit/` 文件夹
 * **t5 模型**
-  下载 [models_t5_umt5-xxl-enc-bf16.pth](https://www.modelscope.cn/models/Wan-AI/Wan2.1-T2V-1.3B/file/view/master?fileName=models_t5_umt5-xxl-enc-bf16.pth&status=2)，放入 `models/wan2.1/t5/` 文件夹，注意在插件根目录下有 `models/wan2.1/t5/google` 这么一个文件夹，如果你作为webui插件运行，把它放到webui根目录的相应位置下
+  下载 [models_t5_umt5-xxl-enc-bf16.pth](https://www.modelscope.cn/models/Wan-AI/Wan2.1-T2V-1.3B/file/view/master?fileName=models_t5_umt5-xxl-enc-bf16.pth&status=2)，放入 `models/wan2.1/t5/` 文件夹
 * **vae 模型**
   下载 [Wan2.1_VAE.pth](https://www.modelscope.cn/models/Wan-AI/Wan2.1-T2V-1.3B/file/view/master?fileName=Wan2.1_VAE.pth&status=2)，放入 `models/wan2.1/vae/` 文件夹
 
