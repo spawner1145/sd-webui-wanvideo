@@ -21,7 +21,7 @@ except ImportError:
     shared = type('Shared', (), {'cmd_opts': type('CmdOpts', (), {'api_auth': None})()})()
     webui_queue_lock = None
 
-from backend.inferrence import generate_t2v, generate_i2v, generate_v2v, get_model_files
+from backend_wanvideo.inferrence import generate_t2v, generate_i2v, generate_v2v, get_model_files
 
 # Pydantic 模型定义请求和响应格式，添加 Field 描述
 class Text2VideoRequest(BaseModel):
