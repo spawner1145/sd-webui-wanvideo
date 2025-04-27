@@ -34,7 +34,7 @@ NPROC_PER_NODE = 1  # 默认 USP 进程数
 if IN_WEBUI:
     # WebUI 环境下，注册 UI 和 API 回调
     from backend.api import on_app_started
-    script_callbacks.on_ui_tabs([(create_wan_video_tab(), "Wan Video", "wan_video_tab")])
+    script_callbacks.on_ui_tabs(lambda: [(create_wan_video_tab(), "Wan Video", "wan_video_tab")])
     script_callbacks.on_app_started(on_app_started)
 else:
     # 非 WebUI 环境下，分别启动 Gradio UI 和 FastAPI
