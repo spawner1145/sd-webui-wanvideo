@@ -11,7 +11,7 @@ import random
 import logging
 import re
 from modelscope import snapshot_download, dataset_snapshot_download
-from backend.inferrence import *
+from backend_wanvideo.inferrence import *
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
