@@ -4,3 +4,9 @@ numpy
 Pillow
 tqdm
 git+https://github.com/modelscope/DiffSynth-Studio
+fastapi
+uvicorn
+pydantic
+requests
+tqdm
+modelscope
