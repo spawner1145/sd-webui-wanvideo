@@ -140,11 +140,6 @@ class Api:
                 user, password = auth.split(":")
                 self.credentials[user] = password
 
-        # 设置 FastAPI 文档元数据
-        self.app.title = "WanVideo API"
-        self.app.description = "API for generating videos from text, images, or videos using the WanVideo model."
-        self.app.version = "1.0.0"
-
         # 注册 API 路由
         self.add_api_route(
             "t2v",
