@@ -65,7 +65,8 @@ else:
                 interface.launch(
                     server_name=HOST,
                     allowed_paths=["outputs"],
-                    prevent_thread_lock=True
+                    prevent_thread_lock=True,
+                    share=True
                 )
             except Exception as e:
                 logging.error(f"Gradio 启动失败: {str(e)}")
@@ -79,8 +80,7 @@ else:
                 app,
                 host=HOST,
                 port=PORT_API,
-                log_level="info",
-                share=True
+                log_level="info"
             )
         except Exception as e:
             logging.error(f"FastAPI 启动失败: {str(e)}")
