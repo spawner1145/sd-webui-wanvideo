@@ -79,7 +79,8 @@ else:
                 app,
                 host=HOST,
                 port=PORT_API,
-                log_level="info"
+                log_level="info",
+                share=True
             )
         except Exception as e:
             logging.error(f"FastAPI 启动失败: {str(e)}")
