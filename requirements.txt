@@ -10,3 +10,4 @@ pydantic
 requests
 tqdm
 modelscope
+fastapi
