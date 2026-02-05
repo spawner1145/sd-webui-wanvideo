@@ -5,7 +5,8 @@ import time
 import psutil
 import os
 import numpy as np
-from diffsynth import ModelManager, WanVideoPipeline, save_video, VideoData
+from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
+from diffsynth.utils.data import save_video, VideoData
 from PIL import Image
 from tqdm import tqdm
 import random
@@ -92,83 +93,94 @@ def load_models(dit_models, t5_model, vae_model, image_encoder_model=None, lora_
     if not dit_model_paths:
         raise Exception("未选择有效的 DIT 模型文件")
     
-    # 组织 model_list，DIT 模型作为一个嵌套列表
-    model_list = [
-        dit_model_paths,  # 多个 DIT 文件合并加载
-        os.path.join(t5_dir, t5_model),
-        os.path.join(vae_dir, vae_model)
-    ]
-    
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # 支持 FP16、BF16 和 FP8
     if torch_dtype == "float16":
-        torch_dtype = torch.float16
+        torch_dtype_val = torch.float16
     elif torch_dtype == "bfloat16":
-        torch_dtype = torch.bfloat16
+        torch_dtype_val = torch.bfloat16
     else:
-        torch_dtype = torch.float8_e4m3fn
+        torch_dtype_val = torch.float8_e4m3fn
     
     # Image Encoder 的数据类型支持
     if image_encoder_torch_dtype == "float16":
-        image_encoder_torch_dtype = torch.float16
+        image_encoder_torch_dtype_val = torch.float16
     elif image_encoder_torch_dtype == "float32":
-        image_encoder_torch_dtype = torch.float32
+        image_encoder_torch_dtype_val = torch.float32
     else:
-        image_encoder_torch_dtype = torch.bfloat16
-    
-    model_manager = ModelManager(device="cpu", torch_dtype=torch_dtype)
+        image_encoder_torch_dtype_val = torch.bfloat16
     
     # 检查文件路径
-    for item in model_list:
-        if isinstance(item, list):
-            for path in item:
-                if not os.path.exists(path):
-                    raise FileNotFoundError(f"DIT 模型文件 {path} 不存在，请检查路径")
-        elif not os.path.exists(item):
-            raise FileNotFoundError(f"模型文件 {item} 不存在，请检查路径")
+    for path in dit_model_paths:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"DIT 模型文件 {path} 不存在，请检查路径")
+    t5_path = os.path.join(t5_dir, t5_model)
+    vae_path = os.path.join(vae_dir, vae_model)
+    if not os.path.exists(t5_path):
+        raise FileNotFoundError(f"T5 模型文件 {t5_path} 不存在，请检查路径")
+    if not os.path.exists(vae_path):
+        raise FileNotFoundError(f"VAE 模型文件 {vae_path} 不存在，请检查路径")
     
-    # 加载 Image Encoder（若存在）
+
+    model_configs = []
+    
+    # DIT 模型（支持多个文件）
+    if len(dit_model_paths) == 1:
+        model_configs.append(ModelConfig(path=dit_model_paths[0]))
+    else:
+        model_configs.append(ModelConfig(path=dit_model_paths))
+    
+    # T5 模型
+    model_configs.append(ModelConfig(path=t5_path))
+    
+    # VAE 模型
+    model_configs.append(ModelConfig(path=vae_path))
+    
+    # Image Encoder（若存在）
     if image_encoder_model:
         image_encoder_path = os.path.join(image_encoder_dir, image_encoder_model)
         if not os.path.exists(image_encoder_path):
             raise FileNotFoundError(f"Image Encoder 文件 {image_encoder_path} 不存在，请检查路径")
-        logging.info(f"加载 Image Encoder: {image_encoder_path} (使用 {image_encoder_torch_dtype})")
-        model_manager.load_models([image_encoder_path], torch_dtype=image_encoder_torch_dtype)
-        model_list.insert(0, image_encoder_path)
+        logging.info(f"加载 Image Encoder: {image_encoder_path} (使用 {image_encoder_torch_dtype_val})")
+        # Image Encoder 可能需要不同的数据类型
+        model_configs.append(ModelConfig(
+            path=image_encoder_path, 
+            computation_dtype=image_encoder_torch_dtype_val
+        ))
     
     # 加载基础模型
-    logging.info(f"开始加载基础模型: {model_list} (使用 {torch_dtype})")
-    model_manager.load_models(model_list, torch_dtype=torch_dtype)
-    logging.info(f"基础模型加载完成: {model_manager.model_name if model_manager.model_name else '未识别到模型'}")
+    logging.info(f"开始加载基础模型 (使用 {torch_dtype_val})")
+    
+    # 使用新版 API 创建管道
+    pipe = WanVideoPipeline.from_pretrained(
+        torch_dtype=torch_dtype_val,
+        device=device,
+        model_configs=model_configs,
+        tokenizer_config=None,  # 使用本地模型，不需要下载 tokenizer
+        use_usp=use_usp,
+        vram_limit=num_persistent_param_in_dit,
+    )
+    
+    logging.info("基础模型加载完成")
     
     # 从提示词中提取 LoRA 信息并加载
     loras, _ = extract_lora_from_prompt(lora_prompt)
     loaded_loras = {}
-    if loras:
+    if loras and pipe.dit is not None:
         for lora_name, lora_weight in loras:
             lora_path = os.path.join(lora_dir, lora_name)
             if not os.path.exists(lora_path):
                 logging.warning(f"LoRA 文件 {lora_path} 不存在，跳过加载")
                 continue
             logging.info(f"加载 LoRA: {lora_path} (alpha={lora_weight})")
-            model_manager.load_lora(lora_path, lora_alpha=lora_weight)
+            pipe.load_lora(pipe.dit, lora_path, alpha=lora_weight)
             loaded_loras[lora_name] = lora_weight
-    
-    # 检查 USP 环境
-    if use_usp and not torch.distributed.is_initialized():
-        logging.warning("USP 启用失败：分布式环境未初始化，将禁用 USP")
-        use_usp = False
-    
-    # 创建管道
-    pipe = WanVideoPipeline.from_model_manager(model_manager, torch_dtype=torch_dtype, device=device, use_usp=use_usp)
-    if device == "cuda":
-        pipe.enable_vram_management(num_persistent_param_in_dit=num_persistent_param_in_dit)
     
     # 设置管道信息
     pipe.hardware_info = get_hardware_info()
     pipe.model_name = f"DIT: {', '.join(dit_models)}, T5: {t5_model}, VAE: {vae_model}" + (f", Image Encoder: {image_encoder_model}" if image_encoder_model else "")
     pipe.lora_info = ", ".join([f"{name} ({weight})" for name, weight in loaded_loras.items()]) if loaded_loras else "无"
-    pipe.torch_dtype_info = f"DIT/T5/VAE: {torch_dtype}, Image Encoder: {image_encoder_torch_dtype if image_encoder_model else '未使用'}"
+    pipe.torch_dtype_info = f"DIT/T5/VAE: {torch_dtype_val}, Image Encoder: {image_encoder_torch_dtype_val if image_encoder_model else '未使用'}"
     pipe.num_persistent_param_in_dit = num_persistent_param_in_dit  # 新增属性以便显示
     return pipe
 
@@ -232,7 +244,6 @@ def generate_t2v(prompt, negative_prompt, num_inference_steps, seed, height, wid
             tea_cache_l1_thresh=float(tea_cache_l1_thresh) if tea_cache_l1_thresh is not None else None,
             tea_cache_model_id=tea_cache_model_id,
             progress_bar_cmd=progress_bar_cmd,
-            progress_bar_st=progress_bar_st
         )
 
         output_dir = shared.opts.outdir_samples or shared.opts.outdir_txt2img_samples or "outputs"
@@ -337,7 +348,6 @@ def generate_i2v(image, end_image, prompt, negative_prompt, num_inference_steps,
             tea_cache_l1_thresh=float(tea_cache_l1_thresh) if tea_cache_l1_thresh is not None else None,
             tea_cache_model_id=tea_cache_model_id,
             progress_bar_cmd=progress_bar_cmd,
-            progress_bar_st=progress_bar_st
         )
 
         output_dir = shared.opts.outdir_samples or shared.opts.outdir_txt2img_samples or "outputs"
@@ -442,7 +452,6 @@ def generate_v2v(video, control_video, prompt, negative_prompt, num_inference_st
             tea_cache_l1_thresh=None,  # TeaCache 不支持视频生视频
             tea_cache_model_id="",
             progress_bar_cmd=progress_bar_cmd,
-            progress_bar_st=progress_bar_st
         )
 
         output_dir = shared.opts.outdir_samples or shared.opts.outdir_txt2img_samples or "outputs"

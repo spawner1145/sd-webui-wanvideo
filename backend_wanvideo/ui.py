@@ -4,14 +4,15 @@ import time
 import psutil
 import os
 import numpy as np
-from diffsynth import ModelManager, WanVideoPipeline, save_video, VideoData
+from diffsynth.pipelines.wan_video import WanVideoPipeline, ModelConfig
+from diffsynth.utils.data import save_video, VideoData
 from PIL import Image
 from tqdm import tqdm
 import random
 import logging
 import re
 from modelscope import snapshot_download, dataset_snapshot_download
-from backend_wanvideo.inferrence import *
+from backend_wanvideo.inference import *
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)

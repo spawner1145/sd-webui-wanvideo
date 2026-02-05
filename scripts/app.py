@@ -2,7 +2,7 @@ import logging
 import threading
 from threading import Lock
 from fastapi import FastAPI
-from backend_wanvideo.inferrence import *
+from backend_wanvideo.inference import *
 from backend_wanvideo.ui import *
 from backend_wanvideo.api import Api
 import uvicorn
